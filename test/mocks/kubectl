@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+if [[ -n "${KUBECTL_CALL_LOG:-}" ]]; then
+  echo "$*" >> "$KUBECTL_CALL_LOG"
+fi
+
+if [[ "$*" == *"create token"* ]]; then
+  if [[ -n "${KUBECTL_TOKEN_SA_LOG:-}" ]]; then
+    prev=""
+    for arg in "$@"; do
+      if [[ "$prev" == "token" ]]; then
+        echo "$arg" > "$KUBECTL_TOKEN_SA_LOG"
+      fi
+      prev="$arg"
+    done
+  fi
+  echo "fake-token"
+  exit 0
+fi
+
+if [[ "$*" == *"apply -f"* ]]; then
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "-f" ]]; then
+      cp "$arg" "${KUBECTL_APPLY_INPUT_FILE:-/dev/null}"
+    fi
+    prev="$arg"
+  done
+  exit 0
+fi
+
+if [[ "$*" == *"delete job"* ]]; then
+  if [[ -n "${KUBECTL_DELETE_MARKER:-}" ]]; then
+    echo "deleted" > "$KUBECTL_DELETE_MARKER"
+  fi
+  exit 0
+fi
+
+if [[ "$*" == *"get job"* && "$*" == *"status.failed"* ]]; then
+  echo "${MOCK_JOB_FAILED:-}"
+  exit 0
+fi
+
+if [[ "$*" == *"get job"* && "$*" == *"status.succeeded"* ]]; then
+  echo "${MOCK_JOB_SUCCEEDED:-}"
+  exit 0
+fi
+
+if [[ "$*" == *"get pods"* ]]; then
+  echo "${MOCK_POD_NAME:-}"
+  exit 0
+fi
+
+# Deliberately distinct from "get pods" above -- "get pod " (singular,
+# trailing space) never matches "get pods " since the "s" sits between
+# "pod" and the space.
+if [[ "$*" == *"get pod "* ]]; then
+  count_file="${MOCK_PENDING_COUNTER_FILE:-}"
+  n=0
+  if [[ -n "$count_file" && -f "$count_file" ]]; then
+    n=$(cat "$count_file")
+  fi
+  if [[ "$n" -lt "${MOCK_PENDING_COUNT:-0}" ]]; then
+    [[ -n "$count_file" ]] && echo $((n + 1)) > "$count_file"
+    echo "Pending"
+  else
+    echo "${MOCK_POD_PHASE:-Running}"
+  fi
+  exit 0
+fi
+
+if [[ "$*" == *"logs -f"* ]]; then
+  if [[ -n "${KUBECTL_LOGS_MARKER:-}" ]]; then
+    echo "logged" > "$KUBECTL_LOGS_MARKER"
+  fi
+  echo "fake pod logs"
+  exit 0
+fi
+
+echo "unexpected kubectl call: $*" >&2
+exit 1
