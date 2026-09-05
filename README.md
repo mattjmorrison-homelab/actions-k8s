@@ -52,7 +52,8 @@ fetches its own context directly.
 | `service-account` | string | *(required)* | The per-repo job ServiceAccount to run as, e.g. `graph-router-job`. Must already exist -- see `k8s-ci-rbac`'s `jobServiceAccounts`. |
 | `namespace` | string | `github-runner` | Namespace the job ServiceAccount lives in. |
 | `image` | string | *(required)* | Container image to run. |
-| `command` | string | *(required)* | Shell command to run inside the container (wrapped as `sh -c`). |
+| `command` | string | *(required)* | When `shell` is `"true"` (default): a single shell string, wrapped as `sh -c` -- for images with a shell (npm/pytest/Playwright etc). When `shell` is `"false"`: a whitespace-separated arg list passed straight to the image's own `ENTRYPOINT`, no shell involved -- required for shell-less images like kaniko's official executor image. |
+| `shell` | string | `"true"` | Set to `"false"` for shell-less images (e.g. kaniko, which has no `/bin/sh` at all). |
 | `env` | string | *(empty)* | Newline-separated `KEY=VALUE` pairs to set as container env vars. |
 | `secret-volume` | string | *(empty)* | `<secretName>:<mountPath>` -- mounts a Secret as a file inside the container. Needed for kaniko's push credential (`/kaniko/.docker/config.json`): `imagePullSecrets` only affects the kubelet's own image pull, it never puts anything inside the container's own filesystem. The Secret's `.dockerconfigjson` key is remapped to a file named `config.json` at the mount path -- currently the only thing this input is used for. |
 | `node-selector` | string | *(empty)* | Comma-separated `key=value` pairs, e.g. `kubernetes.io/arch=arm64`. |
@@ -78,9 +79,10 @@ jobs:
         with:
           service-account: graph-router-job
           image: gcr.io/kaniko-project/executor@<digest>
+          shell: "false" # kaniko's image has no shell -- see command's own doc above
           command: >-
             /kaniko/executor --context=git://github.com/mattjmorrison-homelab/graph-router.git#refs/heads/main
-            --target=release --destination=registry.morrisons.site/graph-router:latest
+            --dockerfile=Dockerfile --target=release --destination=registry.morrisons.site/graph-router:latest
           secret-volume: zot-pull-secret:/kaniko/.docker
 ```
 

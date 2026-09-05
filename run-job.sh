@@ -28,21 +28,40 @@ repo="${GITHUB_REPOSITORY##*/}"
 job_name="${repo}-${suffix}"
 job_name="${job_name:0:52}" # leave room for the pod-template-hash suffix Kubernetes appends
 
-# kaniko has no shell/git and builds directly from --context=git://...;
-# other images (e.g. Playwright's) have no such context flag, so give
-# them a git-clone preamble instead. Public repos, no auth needed.
-final_command="$COMMAND"
-if [ -n "${CHECKOUT_REF:-}" ]; then
-  final_command="apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null && git clone --quiet https://github.com/${GITHUB_REPOSITORY}.git /workspace && cd /workspace && git checkout --quiet ${CHECKOUT_REF} && ${COMMAND}"
-fi
-
-# Base64-round-trip the command so it never needs YAML/shell escaping,
-# regardless of what quotes/$vars/&&s it contains.
-command_b64=$(printf '%s' "$final_command" | base64 -w0)
-
 yaml_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
+
+# kaniko's official image is distroless -- ENTRYPOINT ["/kaniko/executor"],
+# no shell at all -- so it can never run a `sh -c` wrapped command.
+# SHELL=false skips the shell entirely: COMMAND is split on whitespace
+# (safe here since kaniko's own flags never contain spaces) and passed as
+# `args:`, letting the image's own ENTRYPOINT run them directly. Every
+# other caller (npm/pytest/Playwright) needs real shell semantics
+# (&&, cd, multi-statement) and keeps the default SHELL=true path.
+if [ "${SHELL_MODE:-true}" = "false" ]; then
+  read -ra command_args <<< "$COMMAND"
+  command_yaml="args: ["
+  first=1
+  for arg in "${command_args[@]}"; do
+    [ "$first" -eq 0 ] && command_yaml+=", "
+    command_yaml+="\"$(yaml_escape "$arg")\""
+    first=0
+  done
+  command_yaml+="]"
+else
+  # kaniko has no shell/git and builds directly from --context=git://...;
+  # other images (e.g. Playwright's) have no such context flag, so give
+  # them a git-clone preamble instead. Public repos, no auth needed.
+  final_command="$COMMAND"
+  if [ -n "${CHECKOUT_REF:-}" ]; then
+    final_command="apt-get update -qq && apt-get install -y -qq git ca-certificates >/dev/null && git clone --quiet https://github.com/${GITHUB_REPOSITORY}.git /workspace && cd /workspace && git checkout --quiet ${CHECKOUT_REF} && ${COMMAND}"
+  fi
+  # Base64-round-trip the command so it never needs YAML/shell escaping,
+  # regardless of what quotes/$vars/&&s it contains.
+  command_b64=$(printf '%s' "$final_command" | base64 -w0)
+  command_yaml="command: [\"sh\", \"-c\", \"echo ${command_b64} | base64 -d | sh\"]"
+fi
 
 {
   cat <<YAML
@@ -62,7 +81,7 @@ spec:
       containers:
         - name: job
           image: ${IMAGE}
-          command: ["sh", "-c", "echo ${command_b64} | base64 -d | sh"]
+          ${command_yaml}
 YAML
 
   if [ -n "${ENV_VARS:-}" ]; then

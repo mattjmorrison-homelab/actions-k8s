@@ -22,8 +22,20 @@ inputs:
     description: Container image to run.
     required: true
   command:
-    description: Shell command to run inside the container (wrapped as sh -c).
+    description: >-
+      Command to run inside the container. When shell is "true" (the
+      default), a single shell string wrapped as sh -c -- use this for
+      images with a shell (npm/pytest/Playwright etc). When shell is
+      "false", a whitespace-separated arg list passed straight to the
+      image's own ENTRYPOINT with no shell involved -- required for
+      shell-less images like kaniko's official executor image.
     required: true
+  shell:
+    description: >-
+      Set to "false" for shell-less images (e.g. kaniko's official
+      executor image, which has no /bin/sh at all) -- see command above.
+    required: false
+    default: "true"
   env:
     description: Newline-separated KEY=VALUE pairs to set as container env vars.
     required: false
@@ -74,6 +86,7 @@ runs:
         NAMESPACE: ${{ inputs.namespace }}
         IMAGE: ${{ inputs.image }}
         COMMAND: ${{ inputs.command }}
+        SHELL_MODE: ${{ inputs.shell }}
         ENV_VARS: ${{ inputs.env }}
         SECRET_VOLUME: ${{ inputs.secret-volume }}
         NODE_SELECTOR: ${{ inputs.node-selector }}
