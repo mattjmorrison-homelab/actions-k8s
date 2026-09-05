@@ -1,0 +1,82 @@
+name: Run Kubernetes Job
+description: >-
+  Mints a short-lived token for a per-repo job ServiceAccount (see
+  k8s-ci-rbac's jobServiceAccounts), creates a real Kubernetes Job to run
+  a container to completion, streams its logs, and propagates its
+  pass/fail exit code. The GitHub Actions self-hosted runners here have
+  no Docker access of their own -- this is how CI actually builds/tests
+  container images (kaniko builds, npm/pytest runs, Playwright smoke
+  tests), mirroring how Woodpecker's own kubernetes backend already ran
+  each pipeline step as its own pod.
+inputs:
+  service-account:
+    description: >-
+      The per-repo job ServiceAccount to run as (e.g. graph-router-job --
+      see k8s-ci-rbac's jobServiceAccounts). Must already exist.
+    required: true
+  namespace:
+    description: Namespace the job ServiceAccount lives in.
+    required: false
+    default: github-runner
+  image:
+    description: Container image to run.
+    required: true
+  command:
+    description: Shell command to run inside the container (wrapped as sh -c).
+    required: true
+  env:
+    description: Newline-separated KEY=VALUE pairs to set as container env vars.
+    required: false
+    default: ""
+  secret-volume:
+    description: >-
+      <secretName>:<mountPath> -- mounts a Secret as a file inside the
+      container. Needed for kaniko's push credential
+      (/kaniko/.docker/config.json): imagePullSecrets only affects the
+      kubelet's own image pull, it never puts anything inside the
+      container's filesystem for the container's own process to read.
+    required: false
+    default: ""
+  node-selector:
+    description: Comma-separated key=value pairs, e.g. kubernetes.io/arch=arm64
+    required: false
+    default: ""
+  tolerations:
+    description: >-
+      Comma-separated key=value:effect entries, e.g. dedicated=pi:NoSchedule
+      (Equal operator is always used).
+    required: false
+    default: ""
+  checkout-ref:
+    description: >-
+      When set, checks out this ref via a git-clone preamble before
+      running command -- for images with no native git-context mechanism
+      of their own (e.g. Playwright's, unlike kaniko's --context=git://...).
+    required: false
+    default: ""
+  active-deadline-seconds:
+    description: >-
+      Kubernetes activeDeadlineSeconds for the Job -- the backstop that
+      gives up if the pod can never be scheduled at all (e.g. no free
+      arm64+Pi-tainted node).
+    required: false
+    default: "900"
+runs:
+  using: composite
+  steps:
+    - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+      with:
+        version: "v1.35.7" # verify against the live cluster's version before merging
+    - shell: bash
+      run: bash "${{ github.action_path }}/run-job.sh"
+      env:
+        SERVICE_ACCOUNT: ${{ inputs.service-account }}
+        NAMESPACE: ${{ inputs.namespace }}
+        IMAGE: ${{ inputs.image }}
+        COMMAND: ${{ inputs.command }}
+        ENV_VARS: ${{ inputs.env }}
+        SECRET_VOLUME: ${{ inputs.secret-volume }}
+        NODE_SELECTOR: ${{ inputs.node-selector }}
+        TOLERATIONS: ${{ inputs.tolerations }}
+        CHECKOUT_REF: ${{ inputs.checkout-ref }}
+        ACTIVE_DEADLINE_SECONDS: ${{ inputs.active-deadline-seconds }}
