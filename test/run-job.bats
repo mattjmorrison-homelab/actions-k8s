@@ -74,6 +74,14 @@ decoded_command() {
   grep -q "secretName: zot-pull-secret" "$KUBECTL_APPLY_INPUT_FILE"
 }
 
+@test "remaps the .dockerconfigjson key to config.json so kaniko finds it" {
+  export SECRET_VOLUME="zot-pull-secret:/kaniko/.docker"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  grep -q "key: .dockerconfigjson" "$KUBECTL_APPLY_INPUT_FILE"
+  grep -q "path: config.json" "$KUBECTL_APPLY_INPUT_FILE"
+}
+
 @test "omits volumes section entirely when SECRET_VOLUME is unset" {
   run bash "$BATS_TEST_DIRNAME/../run-job.sh"
   [ "$status" -eq 0 ]

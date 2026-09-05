@@ -105,10 +105,23 @@ TOL
   fi
 
   if [ -n "${SECRET_VOLUME:-}" ]; then
-    echo "      volumes:"
-    echo "        - name: secret-vol"
-    echo "          secret:"
-    echo "            secretName: ${SECRET_VOLUME%%:*}"
+    # kaniko's push credential must land at exactly
+    # /kaniko/.docker/config.json, but the Secret's data key is
+    # ".dockerconfigjson" (the standard key for the dockerconfigjson
+    # Secret type -- see zot-pull-secret's ExternalSecret template).
+    # Mounted plainly, that key becomes the file's own name, giving
+    # .../.dockerconfigjson instead -- remap it via `items` so the
+    # mounted file is actually named config.json. This is currently the
+    # only thing secret-volume is used for.
+    cat <<VOLUMES
+      volumes:
+        - name: secret-vol
+          secret:
+            secretName: ${SECRET_VOLUME%%:*}
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+VOLUMES
   fi
 } > /tmp/job.yaml
 

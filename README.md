@@ -54,7 +54,7 @@ fetches its own context directly.
 | `image` | string | *(required)* | Container image to run. |
 | `command` | string | *(required)* | Shell command to run inside the container (wrapped as `sh -c`). |
 | `env` | string | *(empty)* | Newline-separated `KEY=VALUE` pairs to set as container env vars. |
-| `secret-volume` | string | *(empty)* | `<secretName>:<mountPath>` -- mounts a Secret as a file inside the container. Needed for kaniko's push credential (`/kaniko/.docker/config.json`): `imagePullSecrets` only affects the kubelet's own image pull, it never puts anything inside the container's own filesystem. |
+| `secret-volume` | string | *(empty)* | `<secretName>:<mountPath>` -- mounts a Secret as a file inside the container. Needed for kaniko's push credential (`/kaniko/.docker/config.json`): `imagePullSecrets` only affects the kubelet's own image pull, it never puts anything inside the container's own filesystem. The Secret's `.dockerconfigjson` key is remapped to a file named `config.json` at the mount path -- currently the only thing this input is used for. |
 | `node-selector` | string | *(empty)* | Comma-separated `key=value` pairs, e.g. `kubernetes.io/arch=arm64`. |
 | `tolerations` | string | *(empty)* | Comma-separated `key=value:effect` entries, e.g. `dedicated=pi:NoSchedule` (always uses the `Equal` operator). |
 | `checkout-ref` | string | *(empty)* | When set, checks out this ref via a git-clone preamble before running `command` -- for images with no native git-context mechanism of their own (e.g. Playwright's). |
