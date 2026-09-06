@@ -129,6 +129,13 @@ decoded_command() {
   [ -f "$KUBECTL_LOGS_MARKER" ]
 }
 
+@test "polls past a brief delay before .status.succeeded is set, instead of failing on the first empty read" {
+  export MOCK_SUCCEEDED_DELAY_COUNT="3"
+  export MOCK_SUCCEEDED_DELAY_COUNTER_FILE="$BATS_TEST_TMPDIR/succeeded-delay-count"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+}
+
 @test "exits 0 and streams logs when the Job succeeds" {
   run bash "$BATS_TEST_DIRNAME/../run-job.sh"
   [ "$status" -eq 0 ]

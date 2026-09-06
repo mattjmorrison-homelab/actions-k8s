@@ -177,10 +177,23 @@ if [ -n "$pod" ]; then
   kube logs -f "$pod" -n "$NAMESPACE" || true
 fi
 
-succeeded=$(kube get job "$job_name" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
-if [ -n "$succeeded" ] && [ "$succeeded" -gt 0 ] 2>/dev/null; then
-  exit 0
-fi
+# The Job controller can take a moment to update .status.succeeded/
+# .status.failed after the pod's container actually exits -- checking
+# just once right after the log stream ends can race a real success
+# (confirmed: a real kaniko build completed cleanly with no error in its
+# own logs, yet a single immediate check here read neither field as set
+# yet). Poll briefly instead of trusting the first read.
+for _ in $(seq 1 15); do
+  succeeded=$(kube get job "$job_name" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
+  if [ -n "$succeeded" ] && [ "$succeeded" -gt 0 ] 2>/dev/null; then
+    exit 0
+  fi
+  job_failed=$(kube get job "$job_name" -n "$NAMESPACE" -o jsonpath='{.status.failed}' 2>/dev/null || echo "")
+  if [ -n "$job_failed" ] && [ "$job_failed" -gt 0 ] 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
 
 echo "Job $job_name did not succeed" >&2
 exit 1
