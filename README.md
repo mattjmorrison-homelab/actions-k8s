@@ -80,8 +80,12 @@ jobs:
           service-account: graph-router-job
           image: gcr.io/kaniko-project/executor@<digest>
           shell: "false" # kaniko's image has no shell -- see command's own doc above
+          # No leading "/kaniko/executor" -- the image's own ENTRYPOINT
+          # already is that binary; shell:"false" appends command as
+          # args, not command, so repeating the binary name here makes
+          # kaniko treat its own path as an unrecognized subcommand.
           command: >-
-            /kaniko/executor --context=git://github.com/mattjmorrison-homelab/graph-router.git#refs/heads/main
+            --context=git://github.com/mattjmorrison-homelab/graph-router.git#refs/heads/main
             --dockerfile=Dockerfile --target=release --destination=registry.morrisons.site/graph-router:latest
           secret-volume: zot-pull-secret:/kaniko/.docker
 ```
