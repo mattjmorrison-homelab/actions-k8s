@@ -177,13 +177,15 @@ if [ -n "$pod" ]; then
   kube logs -f "$pod" -n "$NAMESPACE" || true
 fi
 
-# The Job controller can take a moment to update .status.succeeded/
-# .status.failed after the pod's container actually exits -- checking
-# just once right after the log stream ends can race a real success
-# (confirmed: a real kaniko build completed cleanly with no error in its
-# own logs, yet a single immediate check here read neither field as set
-# yet). Poll briefly instead of trusting the first read.
-for _ in $(seq 1 15); do
+# The Job controller can lag well behind the pod's container actually
+# exiting before it updates .status.succeeded/.status.failed -- this is
+# normal Kubernetes controller-resync latency (kubelet's own pod-status
+# sync period, then the Job controller's own resync on top of that), not
+# a one-off race. A 15s poll window wasn't enough (confirmed against a
+# real run: the container exited cleanly with no error in its own logs,
+# but status still hadn't updated 36s later) -- poll for up to two
+# minutes instead of trusting a short timeout.
+for _ in $(seq 1 120); do
   succeeded=$(kube get job "$job_name" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
   if [ -n "$succeeded" ] && [ "$succeeded" -gt 0 ] 2>/dev/null; then
     exit 0
