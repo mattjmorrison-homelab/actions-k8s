@@ -42,7 +42,17 @@ if [[ "$*" == *"get job"* && "$*" == *"status.failed"* ]]; then
 fi
 
 if [[ "$*" == *"get job"* && "$*" == *"status.succeeded"* ]]; then
-  echo "${MOCK_JOB_SUCCEEDED:-}"
+  count_file="${MOCK_SUCCEEDED_DELAY_COUNTER_FILE:-}"
+  n=0
+  if [[ -n "$count_file" && -f "$count_file" ]]; then
+    n=$(cat "$count_file")
+  fi
+  if [[ "$n" -lt "${MOCK_SUCCEEDED_DELAY_COUNT:-0}" ]]; then
+    [[ -n "$count_file" ]] && echo $((n + 1)) > "$count_file"
+    echo ""
+  else
+    echo "${MOCK_JOB_SUCCEEDED:-}"
+  fi
   exit 0
 fi
 
