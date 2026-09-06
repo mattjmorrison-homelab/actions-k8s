@@ -12,6 +12,7 @@ setup() {
   export TOLERATIONS=""
   export CHECKOUT_REF=""
   export ACTIVE_DEADLINE_SECONDS="900"
+  export SHELL_MODE="true"
   export GITHUB_RUN_ID="123"
   export GITHUB_RUN_ATTEMPT="1"
   export GITHUB_REPOSITORY="mattjmorrison-homelab/graph-router"
@@ -74,6 +75,14 @@ decoded_command() {
   grep -q "secretName: zot-pull-secret" "$KUBECTL_APPLY_INPUT_FILE"
 }
 
+@test "remaps the .dockerconfigjson key to config.json so kaniko finds it" {
+  export SECRET_VOLUME="zot-pull-secret:/kaniko/.docker"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  grep -q "key: .dockerconfigjson" "$KUBECTL_APPLY_INPUT_FILE"
+  grep -q "path: config.json" "$KUBECTL_APPLY_INPUT_FILE"
+}
+
 @test "omits volumes section entirely when SECRET_VOLUME is unset" {
   run bash "$BATS_TEST_DIRNAME/../run-job.sh"
   [ "$status" -eq 0 ]
@@ -90,6 +99,17 @@ decoded_command() {
   grep -q 'key: "dedicated"' "$KUBECTL_APPLY_INPUT_FILE"
   grep -q 'value: "pi"' "$KUBECTL_APPLY_INPUT_FILE"
   grep -q 'effect: "NoSchedule"' "$KUBECTL_APPLY_INPUT_FILE"
+}
+
+@test "passes COMMAND as a plain args list, no shell, when SHELL_MODE is false" {
+  export SHELL_MODE="false"
+  export IMAGE="gcr.io/kaniko-project/executor@sha256:abc"
+  export COMMAND="/kaniko/executor --context=git://github.com/mattjmorrison-homelab/graph-router.git#deadbeef --dockerfile=Dockerfile --target=release --destination=registry.morrisons.site/graph-router:latest"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  ! grep -q '"sh", "-c"' "$KUBECTL_APPLY_INPUT_FILE"
+  ! grep -q "base64 -d" "$KUBECTL_APPLY_INPUT_FILE"
+  grep -q 'args: \["/kaniko/executor", "--context=git://github.com/mattjmorrison-homelab/graph-router.git#deadbeef", "--dockerfile=Dockerfile", "--target=release", "--destination=registry.morrisons.site/graph-router:latest"\]' "$KUBECTL_APPLY_INPUT_FILE"
 }
 
 @test "adds env vars from newline-separated ENV_VARS" {
