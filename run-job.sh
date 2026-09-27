@@ -189,22 +189,55 @@ fi
 # had settled ~3 minutes later -- longer than the guessed budget allowed,
 # on this box under load. Any fixed guess can lose the same way; only the
 # Job's own deadline is a real bound.
-if [ -n "$pod" ] && kube wait pod "$pod" -n "$NAMESPACE" \
-    --for=jsonpath='{.status.containerStatuses[0].state.terminated}' \
-    --timeout="${ACTIVE_DEADLINE_SECONDS}s" >/dev/null 2>&1; then
+#
+# Both `kube wait` calls below used to throw away stderr entirely
+# (`>/dev/null 2>&1`). On two real runs this reported a false failure
+# ~15-17s after the container had already exited 0 -- not a timeout (the
+# real ACTIVE_DEADLINE_SECONDS was 1800, not 15) -- and there was no way
+# to tell why, because whatever error `kube wait` actually hit was
+# discarded before anyone could see it. Direct reproduction against the
+# live cluster ruled out the likelier mechanical causes (the jsonpath
+# existence-check on a field that transitions from absent to present
+# mid-watch resolves correctly; the same is true when it's already
+# present before the watch starts; the kube() wrapper's quoting doesn't
+# mangle the --for argument), which points to a transient, not yet
+# isolated error from the API server itself. Capture each attempt's
+# stderr and exit code instead of discarding them, so the next
+# occurrence is diagnosable from the workflow log instead of requiring
+# another live investigation like this one.
+pod_wait_status=1
+pod_wait_stderr=""
+if [ -n "$pod" ]; then
+  if pod_wait_stderr=$(kube wait pod "$pod" -n "$NAMESPACE" \
+      --for=jsonpath='{.status.containerStatuses[0].state.terminated}' \
+      --timeout="${ACTIVE_DEADLINE_SECONDS}s" 2>&1 1>/dev/null); then
+    pod_wait_status=0
+  else
+    pod_wait_status=$?
+  fi
+fi
+
+if [ "$pod_wait_status" -eq 0 ]; then
   exit_code=$(kube get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")
   if [ -n "$exit_code" ]; then
     exit "$exit_code"
   fi
+  echo "kube wait pod reported the container terminated, but its exit code could not be read back afterward -- falling back to the Job's aggregate status." >&2
 fi
 
 # Fallback: the pod's own terminated state was never observed at all
 # (e.g. the pod was already reaped before this wait started) -- fall
 # back to waiting on the Job's own aggregate status the same way.
-if kube wait job "$job_name" -n "$NAMESPACE" \
-    --for=jsonpath='{.status.succeeded}' --timeout="${ACTIVE_DEADLINE_SECONDS}s" >/dev/null 2>&1; then
+job_wait_status=1
+job_wait_stderr=""
+if job_wait_stderr=$(kube wait job "$job_name" -n "$NAMESPACE" \
+    --for=jsonpath='{.status.succeeded}' --timeout="${ACTIVE_DEADLINE_SECONDS}s" 2>&1 1>/dev/null); then
   exit 0
+else
+  job_wait_status=$?
 fi
 
 echo "Job $job_name did not succeed" >&2
+echo "kube wait pod: exit=${pod_wait_status} stderr=${pod_wait_stderr:-<empty>}" >&2
+echo "kube wait job: exit=${job_wait_status} stderr=${job_wait_stderr:-<empty>}" >&2
 exit 1

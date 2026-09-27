@@ -181,3 +181,25 @@ decoded_command() {
   [ "$status" -eq 1 ]
   [ -f "$KUBECTL_DELETE_MARKER" ]
 }
+
+@test "surfaces the real stderr and exit code from both kube wait attempts on failure, instead of discarding them" {
+  export MOCK_JOB_SUCCEEDED=""
+  export MOCK_POD_WAIT_STDERR="error: timed out waiting for the condition on pods/testpod"
+  export MOCK_POD_WAIT_EXIT="1"
+  export MOCK_JOB_WAIT_STDERR="error: timed out waiting for the condition on jobs/graph-router-123-1-abcd"
+  export MOCK_JOB_WAIT_EXIT="1"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"did not succeed"* ]]
+  [[ "$output" == *"kube wait pod: exit=1 stderr=error: timed out waiting for the condition on pods/testpod"* ]]
+  [[ "$output" == *"kube wait job: exit=1 stderr=error: timed out waiting for the condition on jobs/graph-router-123-1-abcd"* ]]
+}
+
+@test "falls back to the Job's aggregate status and warns when the pod's terminated state is observed but its exit code can't be read back" {
+  export MOCK_POD_TERMINATED="1"
+  export MOCK_POD_EXIT_CODE=""
+  export MOCK_JOB_SUCCEEDED="1"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"its exit code could not be read back afterward"* ]]
+}

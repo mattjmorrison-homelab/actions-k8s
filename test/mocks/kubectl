@@ -55,24 +55,34 @@ if [[ "$*" == *"get pod "* && "$*" == *"terminated.exitCode"* ]]; then
 fi
 
 # `kubectl wait ... --for=jsonpath=...terminated` on the pod: resolves
-# (exit 0) the instant a terminated state would be observable, i.e.
-# whenever MOCK_POD_EXIT_CODE is a real (non-empty) value; otherwise
-# simulates a real wait timeout (kubectl's own exit code 1).
+# (exit 0) the instant a terminated state would be observable. Driven by
+# MOCK_POD_TERMINATED when set (lets a test simulate the wait succeeding
+# independently of whether MOCK_POD_EXIT_CODE -- a separate, later `get
+# pod ...exitCode` call -- comes back empty); otherwise falls back to
+# MOCK_POD_EXIT_CODE's own truthiness, matching the old coupled
+# behavior. On failure, writes MOCK_POD_WAIT_STDERR (or a stand-in
+# timeout message, since real `kubectl wait` timeouts go to stderr too)
+# and exits MOCK_POD_WAIT_EXIT, so tests can assert run-job.sh actually
+# surfaces this instead of discarding it.
 if [[ "$*" == *"wait pod"* && "$*" == *"terminated"* ]]; then
-  if [[ -n "${MOCK_POD_EXIT_CODE:-}" ]]; then
+  if [[ -n "${MOCK_POD_TERMINATED:-${MOCK_POD_EXIT_CODE:-}}" ]]; then
     exit 0
   fi
-  exit 1
+  echo "${MOCK_POD_WAIT_STDERR:-error: timed out waiting for the condition on pods/mock}" >&2
+  exit "${MOCK_POD_WAIT_EXIT:-1}"
 fi
 
 # `kubectl wait ... --for=jsonpath=...succeeded` on the job: resolves
 # when MOCK_JOB_SUCCEEDED is truthy, otherwise times out (exit 1) --
-# same semantics as the old status.succeeded poll, just event-driven.
+# same semantics as the old status.succeeded poll, just event-driven. On
+# failure, writes MOCK_JOB_WAIT_STDERR (or a stand-in timeout message)
+# and exits MOCK_JOB_WAIT_EXIT, mirroring the pod-wait mock above.
 if [[ "$*" == *"wait job"* && "$*" == *"succeeded"* ]]; then
   if [[ -n "${MOCK_JOB_SUCCEEDED:-}" ]]; then
     exit 0
   fi
-  exit 1
+  echo "${MOCK_JOB_WAIT_STDERR:-error: timed out waiting for the condition on jobs/mock}" >&2
+  exit "${MOCK_JOB_WAIT_EXIT:-1}"
 fi
 
 # Deliberately distinct from "get pods" above -- "get pod " (singular,
