@@ -177,14 +177,29 @@ if [ -n "$pod" ]; then
   kube logs -f "$pod" -n "$NAMESPACE" || true
 fi
 
-# The Job controller can lag well behind the pod's container actually
-# exiting before it updates .status.succeeded/.status.failed -- this is
-# normal Kubernetes controller-resync latency (kubelet's own pod-status
-# sync period, then the Job controller's own resync on top of that), not
-# a one-off race. A 15s poll window wasn't enough (confirmed against a
-# real run: the container exited cleanly with no error in its own logs,
-# but status still hadn't updated 36s later) -- poll for up to two
-# minutes instead of trusting a short timeout.
+# Check the pod's own container exit code first, not the Job's aggregate
+# status -- kubelet reports it essentially as soon as the container
+# exits (that's what let `kube logs -f` above return in the first
+# place), while the Job controller's .status.succeeded/.status.failed
+# needs a separate reconcile pass on top of that and can lag well behind
+# on a busy cluster. Widening the Job-status poll from 15s to 2 minutes
+# (a previous fix) still wasn't enough for a heavy build: confirmed
+# against a real run where the image finished building and was actually
+# pushed to the registry successfully, but the Job's own status still
+# hadn't updated 2+ minutes later, reporting a false failure and
+# throwing away a real, working result.
+if [ -n "$pod" ]; then
+  for _ in $(seq 1 5); do
+    exit_code=$(kube get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo "")
+    if [ -n "$exit_code" ]; then
+      exit "$exit_code"
+    fi
+    sleep 1
+  done
+fi
+
+# Fallback: the pod's own exit code was never available (e.g. already
+# reaped) -- poll the Job's aggregate status instead, same as before.
 for _ in $(seq 1 120); do
   succeeded=$(kube get job "$job_name" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "")
   if [ -n "$succeeded" ] && [ "$succeeded" -gt 0 ] 2>/dev/null; then

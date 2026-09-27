@@ -142,6 +142,28 @@ decoded_command() {
   [[ "$output" == *"fake pod logs"* ]]
 }
 
+@test "exits immediately using the pod's own exit code, without ever needing the Job's aggregate status" {
+  export MOCK_POD_EXIT_CODE="0"
+  export MOCK_JOB_SUCCEEDED=""
+  export MOCK_JOB_FAILED=""
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "propagates the pod's own nonzero exit code when the container itself failed" {
+  export MOCK_POD_EXIT_CODE="1"
+  export MOCK_JOB_SUCCEEDED=""
+  export MOCK_JOB_FAILED=""
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 1 ]
+}
+
+@test "falls back to polling the Job's aggregate status when the pod's own exit code is never available" {
+  export MOCK_POD_EXIT_CODE=""
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+}
+
 @test "exits 1 when the Job fails" {
   export MOCK_JOB_SUCCEEDED=""
   export MOCK_JOB_FAILED="1"
