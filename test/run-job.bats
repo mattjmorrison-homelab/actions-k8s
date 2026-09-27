@@ -37,6 +37,14 @@ decoded_command() {
   [ "$(cat "$KUBECTL_TOKEN_SA_LOG")" = "graph-router-job" ]
 }
 
+@test "mints the token with a duration scaled to ACTIVE_DEADLINE_SECONDS plus margin, not a fixed guess" {
+  export ACTIVE_DEADLINE_SECONDS="1800"
+  export KUBECTL_CALL_LOG="$BATS_TEST_TMPDIR/kubectl-calls.log"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  grep -q -- "--duration=2100s" "$KUBECTL_CALL_LOG"
+}
+
 @test "masks the minted token in output" {
   run bash "$BATS_TEST_DIRNAME/../run-job.sh"
   [[ "$output" == *"::add-mask::fake-token"* ]]

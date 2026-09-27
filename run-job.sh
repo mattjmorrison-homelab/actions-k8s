@@ -10,9 +10,24 @@ RUNNER_TOKEN=/var/run/secrets/kubernetes.io/serviceaccount/token
 # do that one thing for that one ServiceAccount (see k8s-ci-rbac's
 # job-service-account-rbac.yaml). Same mechanism as actions-helm's
 # dry-run check, just for a ServiceAccount with real, non-dry-run RBAC.
+#
+# Duration must cover the Job's entire real lifetime, not a fixed guess:
+# this token (via the kube() wrapper below) is reused for every kubectl
+# call for the rest of the script, including the final `kube wait`
+# status checks *after* the Job's container has already finished. A
+# fixed --duration=10m expired mid-script on any build slower than 10
+# minutes -- confirmed on a real app-backstage run where the build took
+# over 13 minutes, so both terminal `kube wait` calls got a genuine 401
+# ("You must be logged in to the server (Unauthorized)"), not a timeout.
+# ACTIVE_DEADLINE_SECONDS is the script's own bound on the Job itself
+# (Kubernetes kills the Job at that point regardless), so basing the
+# token's duration on it can never under-cover the Job; add a 300s
+# margin for this script's own overhead (this token mint, Job creation,
+# and the final status-check/cleanup logic) after the Job's container
+# finishes.
 JOB_TOKEN=$(kubectl --server="$API" --certificate-authority="$CA" \
   --token="$(cat "$RUNNER_TOKEN")" \
-  create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration=10m)
+  create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration="$((ACTIVE_DEADLINE_SECONDS + 300))s")
 echo "::add-mask::$JOB_TOKEN"
 
 kube() {
