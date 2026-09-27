@@ -61,6 +61,14 @@ if [[ "$*" == *"get pods"* ]]; then
   exit 0
 fi
 
+# Checked before the generic "get pod " phase-check below, which would
+# otherwise match this too and return a phase string ("Running") where
+# an exit code is expected.
+if [[ "$*" == *"get pod "* && "$*" == *"terminated.exitCode"* ]]; then
+  echo "${MOCK_POD_EXIT_CODE:-}"
+  exit 0
+fi
+
 # Deliberately distinct from "get pods" above -- "get pod " (singular,
 # trailing space) never matches "get pods " since the "s" sits between
 # "pod" and the space.
