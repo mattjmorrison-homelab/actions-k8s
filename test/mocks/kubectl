@@ -41,21 +41,6 @@ if [[ "$*" == *"get job"* && "$*" == *"status.failed"* ]]; then
   exit 0
 fi
 
-if [[ "$*" == *"get job"* && "$*" == *"status.succeeded"* ]]; then
-  count_file="${MOCK_SUCCEEDED_DELAY_COUNTER_FILE:-}"
-  n=0
-  if [[ -n "$count_file" && -f "$count_file" ]]; then
-    n=$(cat "$count_file")
-  fi
-  if [[ "$n" -lt "${MOCK_SUCCEEDED_DELAY_COUNT:-0}" ]]; then
-    [[ -n "$count_file" ]] && echo $((n + 1)) > "$count_file"
-    echo ""
-  else
-    echo "${MOCK_JOB_SUCCEEDED:-}"
-  fi
-  exit 0
-fi
-
 if [[ "$*" == *"get pods"* ]]; then
   echo "${MOCK_POD_NAME:-}"
   exit 0
@@ -67,6 +52,27 @@ fi
 if [[ "$*" == *"get pod "* && "$*" == *"terminated.exitCode"* ]]; then
   echo "${MOCK_POD_EXIT_CODE:-}"
   exit 0
+fi
+
+# `kubectl wait ... --for=jsonpath=...terminated` on the pod: resolves
+# (exit 0) the instant a terminated state would be observable, i.e.
+# whenever MOCK_POD_EXIT_CODE is a real (non-empty) value; otherwise
+# simulates a real wait timeout (kubectl's own exit code 1).
+if [[ "$*" == *"wait pod"* && "$*" == *"terminated"* ]]; then
+  if [[ -n "${MOCK_POD_EXIT_CODE:-}" ]]; then
+    exit 0
+  fi
+  exit 1
+fi
+
+# `kubectl wait ... --for=jsonpath=...succeeded` on the job: resolves
+# when MOCK_JOB_SUCCEEDED is truthy, otherwise times out (exit 1) --
+# same semantics as the old status.succeeded poll, just event-driven.
+if [[ "$*" == *"wait job"* && "$*" == *"succeeded"* ]]; then
+  if [[ -n "${MOCK_JOB_SUCCEEDED:-}" ]]; then
+    exit 0
+  fi
+  exit 1
 fi
 
 # Deliberately distinct from "get pods" above -- "get pod " (singular,
