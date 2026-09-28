@@ -45,6 +45,14 @@ decoded_command() {
   grep -q -- "--duration=2100s" "$KUBECTL_CALL_LOG"
 }
 
+@test "floors the token duration at 600s for a short ACTIVE_DEADLINE_SECONDS" {
+  export ACTIVE_DEADLINE_SECONDS="120"
+  export KUBECTL_CALL_LOG="$BATS_TEST_TMPDIR/kubectl-calls.log"
+  run bash "$BATS_TEST_DIRNAME/../run-job.sh"
+  [ "$status" -eq 0 ]
+  grep -q -- "--duration=600s" "$KUBECTL_CALL_LOG"
+}
+
 @test "masks the minted token in output" {
   run bash "$BATS_TEST_DIRNAME/../run-job.sh"
   [[ "$output" == *"::add-mask::fake-token"* ]]
