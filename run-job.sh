@@ -25,9 +25,19 @@ RUNNER_TOKEN=/var/run/secrets/kubernetes.io/serviceaccount/token
 # margin for this script's own overhead (this token mint, Job creation,
 # and the final status-check/cleanup logic) after the Job's container
 # finishes.
+# Kubernetes' TokenRequest API enforces its own hard floor of 600s (10m)
+# on expirationSeconds, independent of the above: a short-deadline step
+# (e.g. activeDeadlineSeconds=120, as in a crane retag step) computes
+# 120+300=420s here, which the apiserver rejects outright --
+# "spec.expirationSeconds: Invalid value: 420: may not specify a
+# duration less than 10 minutes". Take whichever is larger.
+token_duration=$((ACTIVE_DEADLINE_SECONDS + 300))
+if [ "$token_duration" -lt 600 ]; then
+  token_duration=600
+fi
 JOB_TOKEN=$(kubectl --server="$API" --certificate-authority="$CA" \
   --token="$(cat "$RUNNER_TOKEN")" \
-  create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration="$((ACTIVE_DEADLINE_SECONDS + 300))s")
+  create token "$SERVICE_ACCOUNT" -n "$NAMESPACE" --duration="${token_duration}s")
 echo "::add-mask::$JOB_TOKEN"
 
 kube() {
