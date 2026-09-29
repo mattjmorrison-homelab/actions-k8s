@@ -1,0 +1,11 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: actions-k8s
+  annotations:
+    github.com/project-slug: mattjmorrison-homelab/actions-k8s
+spec:
+  type: library
+  owner: mattjmorrison-homelab
+  lifecycle: experimental
+  system: ci
